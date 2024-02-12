@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# {Jinyao Zhou}
+# {student id}
+# {jinyaoz@kth.se}
+
+from dubins import *
+from math import *
+from numpy import *
+from operator import itemgetter
+
+# performing A* search
+class AStar:
+    # Initialization function, setting initial state and vehicle information
+    def __init__(self, car):
+        self.car = car
+
+    # Main search function, receiving the path explored so far (default is an empty list)
+    def exploreNodes(self, path_so_far=[]):
+        checkedNodes = []  # List of checked nodes
+        initialNodes = [   # Initial node list including starting point information and cost
+            [self.car.x0, self.car.y0, 0, [], [0], 0, sqrt(
+                (self.car.x0 - self.car.xt) ** 2 + (self.car.y0 - self.car.yt) ** 2), ]
+        ]
+
+        # Search loop, continues until finding the goal or checking all nodes
+        while initialNodes:
+            # Pop the node with the minimum cost
+            x, y, theta, controls, times, g_cost, h_cost = initialNodes.pop(0)
+
+            # Check if the goal is reached
+            if sqrt((x - self.car.xt)**2 + (y - self.car.yt)**2) <= 0.30:
+                return controls, times
+
+            # Iterate over all possible actions (angles)
+            for ang in [-pi / 4, 0, pi / 4]:
+                # Evaluate the new state resulting from this action
+                isValid, new_x, new_y, new_theta, controls1, times1, new_g_cost, new_h_cost = \
+                    self.evaluatePath(
+                        x, y, ang, theta, controls[:], times[:], g_cost)
+
+                new_g_cost += g_cost  # Update the total cost
+                f_cost = new_g_cost + new_h_cost  # Calculate the f cost (g + h)
+
+                verifyNode = [round(new_x, 1), round(
+                    new_y, 1), round(new_theta, 1)]
+
+                # Check if the new node is valid
+                if isValid:
+                    # Check if the node has already been checked
+                    if verifyNode not in checkedNodes:
+                        # Add the new node to the search list and update the checked nodes list
+                        initialNodes.append(
+                            [new_x, new_y, new_theta, controls1, times1, new_g_cost, new_h_cost])
+                        path_so_far.append(ang)
+                        checkedNodes.append(verifyNode)
+
+            # Sort all nodes by cost for selecting the node with the minimum cost in the next iteration
+            initialNodes.sort(key=lambda x: x[-1] + x[-2])
+
+        return [], [0]  # If no path is found, return an empty list
+
+    # Check for obstacles
+    def isObstacle(self, x, y):
+        for obstacle in self.car.obs:
+            if sqrt((obstacle[0] - x)**2 + (obstacle[1] - y)**2) <= obstacle[2] + 0.05:
+                return True
+        return False
+
+    # Evaluate the new state reached by performing an action (angle change)
+    def evaluatePath(self, x, y, ang, theta, controls, times, g_cost):
+        dt = 0.01  # Time step
+        new_g_cost = 0  # Initialize the cost of the new path
+        # Perform the action to get the new state
+        for i in range(100 if ang == 0 else 157):
+            prev_x, prev_y = x, y
+            x, y, theta = step(self.car, x, y, theta, ang)
+            distance = sqrt((prev_x - x)**2 + (prev_y - y)**2)
+            new_g_cost += distance  # Update the g cost
+
+            theta %= (2 * pi)  # Correct the theta value to be in the range of 0-2pi
+
+            # Add new control and time points
+            controls.append(ang)
+            times.append(times[-1] + dt)
+
+            in_bounds = self.car.xlb <= x <= self.car.xub and self.car.ylb <= y <= self.car.yub
+            safe_obstacles = self.isObstacle(x, y)
+
+            if not in_bounds or safe_obstacles:
+                return False, 0, 0, 0, [], [], inf, inf
+
+            if sqrt((x - self.car.xt)**2 + (y - self.car.yt)**2) <= 0.30:
+                return True, x, y, theta, controls, times, new_g_cost, 0
+
+        h_cost = sqrt((x - self.car.xt)**2 + (y - self.car.yt)**2)
+        return True, x, y, theta, controls, times, new_g_cost, h_cost  # Return the new state and cost
+
+# Final solution function
+def solution(car):
+    controls = [0]
+    times = [0, 0.01]
+    astar = AStar(car)
+    controls, times = astar.exploreNodes()
+    return controls, times  # Return the control sequence and time points
